@@ -29,7 +29,7 @@ pub(crate) fn help(
     let mut format_lit = "Usage: {command_name}".to_string();
 
     let positional = fields.iter().filter(|f| f.kind == FieldKind::Positional);
-    for arg in positional {
+    for arg in positional.clone() {
         format_lit.push(' ');
         positional_usage(&mut format_lit, arg);
     }
@@ -56,6 +56,12 @@ pub(crate) fn help(
 
     let description = require_description(errors, Span::call_site(), &ty_attrs.description, "type");
     format_lit.push_str(&description);
+
+    format_lit.push_str(SECTION_SEPARATOR);
+    format_lit.push_str("Arguments:");
+    for positional_arg in positional {
+        positional_description(errors, &mut format_lit, positional_arg);
+    }
 
     format_lit.push_str(SECTION_SEPARATOR);
     format_lit.push_str("Options:");
@@ -186,6 +192,24 @@ Add a doc comment or an `#[argh(description = \"...\")]` attribute.",
         );
         "".to_string()
     })
+}
+
+/// Describes an positional argument like this:
+///  <configuration>       configuration file. This description
+///                        is so long that it wraps to the next line.
+fn positional_description(errors: &Errors, out: &mut String, field: &StructField<'_>) {
+    let positional_name = field.name.to_string();
+    let description = require_description(errors, field.name.span(), &field.attrs.description, "field");
+
+    positional_description_format(out, positional_name, &description);
+}
+
+fn positional_description_format(out: &mut String, mut positional_name: String, description: &str) {
+    positional_name.insert(0, '<');
+    positional_name.push('>');
+
+    let info = argh_shared::CommandInfo { name: &positional_name, description };
+    argh_shared::write_description(out, &info);
 }
 
 /// Describes an option like this:
