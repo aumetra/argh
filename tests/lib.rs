@@ -226,6 +226,50 @@ mod options {
 "###,
         );
     }
+
+    #[derive(argh::FromArgs, Debug, PartialEq)]
+    /// Woot
+    struct Repeating {
+        #[argh(option, short = 'n')]
+        /// fooey
+        n: Vec<String>,
+    }
+
+    #[test]
+    fn repeating() {
+        assert_help_string::<Repeating>(
+            r###"Usage: test_arg_0 [-n <n...>]
+
+Woot
+
+Options:
+  -n, --n           fooey
+  --help            display usage information
+"###,
+        );
+    }
+
+    #[derive(argh::FromArgs, Debug, PartialEq)]
+    /// Woot
+    struct WithArgName {
+        #[argh(option, arg_name = "name")]
+        /// fooey
+        option_name: Option<String>,
+    }
+
+    #[test]
+    fn with_arg_name() {
+        assert_help_string::<WithArgName>(
+            r###"Usage: test_arg_0 [--option-name <name>]
+
+Woot
+
+Options:
+  --option-name     fooey
+  --help            display usage information
+"###,
+        );
+    }
 }
 
 mod positional {
@@ -568,6 +612,11 @@ mod fuchsia_commandline_tools_rubric {
             &["--flag", "--", "-a", "b"],
             StringList { strs: vec!["-a".into(), "b".into()], flag: true },
         );
+        assert_output(&["--", "--help"], StringList { strs: vec!["--help".into()], flag: false });
+        assert_output(
+            &["--", "-a", "--help"],
+            StringList { strs: vec!["-a".into(), "--help".into()], flag: false },
+        );
     }
 
     /// Double-dash can be parsed into an optional field using a provided
@@ -703,44 +752,6 @@ Options:
         e.status.expect_err("should be an error");
     }
 
-    // Commandline tools are expected to support common switches:
-    // --help
-    // --quiet
-    // --verbose
-    // --version
-
-    // help_is_supported (see above help_* tests)
-
-    #[test]
-    fn quiet_is_supported() {
-        // TODO support quiet
-    }
-
-    #[test]
-    fn verbose_is_supported() {
-        // TODO support verbose
-    }
-
-    #[test]
-    fn version_is_supported() {
-        // TODO support version
-    }
-
-    #[test]
-    fn quiet_is_not_supported_in_subcommands() {
-        // TODO support quiet
-    }
-
-    #[test]
-    fn verbose_is_not_supported_in_subcommands() {
-        // TODO support verbose
-    }
-
-    #[test]
-    fn version_is_not_supported_in_subcommands() {
-        // TODO support version
-    }
-
     #[derive(FromArgs, PartialEq, Debug)]
     #[argh(
         description = "Destroy the contents of <file>.",
@@ -797,7 +808,7 @@ Options:
     #[test]
     fn example_parses_correctly() {
         let help_example = HelpExample::from_args(
-            &["<<<arg0>>>"],
+            &["program-name"],
             &["-f", "--scribble", "fooey", "blow-up", "--safely"],
         )
         .unwrap();
@@ -816,7 +827,7 @@ Options:
 
     #[test]
     fn example_errors_on_missing_required_option_and_missing_required_subcommand() {
-        let exit = HelpExample::from_args(&["<<<arg0>>>"], &[]).unwrap_err();
+        let exit = HelpExample::from_args(&["program-name"], &[]).unwrap_err();
         exit.status.unwrap_err();
         assert_eq!(
             exit.output,
@@ -864,4 +875,327 @@ Error codes:
 "###,
         );
     }
+}
+
+#[test]
+fn redact_arg_values_no_args() {
+    #[derive(FromArgs, Debug)]
+    /// Short description
+    struct Cmd {
+        #[argh(option)]
+        /// a msg param
+        msg: Option<String>,
+    }
+
+    let actual = Cmd::redact_arg_values(&["program-name"], &[]).unwrap();
+    assert_eq!(actual, &["program-name"]);
+}
+
+#[test]
+fn redact_arg_values_optional_arg() {
+    #[derive(FromArgs, Debug)]
+    /// Short description
+    struct Cmd {
+        #[argh(option)]
+        /// a msg param
+        msg: Option<String>,
+    }
+
+    let actual = Cmd::redact_arg_values(&["program-name"], &["--msg", "hello"]).unwrap();
+    assert_eq!(actual, &["program-name", "--msg"]);
+}
+
+#[test]
+fn redact_arg_values_two_option_args() {
+    #[derive(FromArgs, Debug)]
+    /// Short description
+    struct Cmd {
+        #[argh(option)]
+        /// a msg param
+        msg: String,
+
+        #[argh(option)]
+        /// a delivery param
+        delivery: String,
+    }
+
+    let actual =
+        Cmd::redact_arg_values(&["program-name"], &["--msg", "hello", "--delivery", "next day"])
+            .unwrap();
+    assert_eq!(actual, &["program-name", "--msg", "--delivery"]);
+}
+
+#[test]
+fn redact_arg_values_option_one_optional_args() {
+    #[derive(FromArgs, Debug)]
+    /// Short description
+    struct Cmd {
+        #[argh(option)]
+        /// a msg param
+        msg: String,
+
+        #[argh(option)]
+        /// a delivery param
+        delivery: Option<String>,
+    }
+
+    let actual =
+        Cmd::redact_arg_values(&["program-name"], &["--msg", "hello", "--delivery", "next day"])
+            .unwrap();
+    assert_eq!(actual, &["program-name", "--msg", "--delivery"]);
+
+    let actual = Cmd::redact_arg_values(&["program-name"], &["--msg", "hello"]).unwrap();
+    assert_eq!(actual, &["program-name", "--msg"]);
+}
+
+#[test]
+fn redact_arg_values_switch() {
+    #[derive(FromArgs, Debug)]
+    /// Short description
+    struct Cmd {
+        #[argh(switch, short = 'f')]
+        /// speed of cmd
+        faster: bool,
+    }
+
+    let actual = Cmd::redact_arg_values(&["program-name"], &["--faster"]).unwrap();
+    assert_eq!(actual, &["program-name", "--faster"]);
+
+    let actual = Cmd::redact_arg_values(&["program-name"], &["-f"]).unwrap();
+    assert_eq!(actual, &["program-name", "-f"]);
+}
+
+#[test]
+fn redact_arg_values_positional() {
+    #[derive(FromArgs, Debug)]
+    /// Short description
+    struct Cmd {
+        #[argh(positional)]
+        /// speed of cmd
+        speed: u8,
+    }
+
+    let actual = Cmd::redact_arg_values(&["program-name"], &["5"]).unwrap();
+    assert_eq!(actual, &["program-name", "speed"]);
+}
+
+#[test]
+fn redact_arg_values_positional_repeating() {
+    #[derive(FromArgs, Debug)]
+    /// Short description
+    struct Cmd {
+        #[argh(positional)]
+        /// speed of cmd
+        speed: Vec<u8>,
+    }
+
+    let actual = Cmd::redact_arg_values(&["program-name"], &["5", "6"]).unwrap();
+    assert_eq!(actual, &["program-name", "speed", "speed"]);
+}
+
+#[test]
+fn redact_arg_values_positional_err() {
+    #[derive(FromArgs, Debug)]
+    /// Short description
+    struct Cmd {
+        #[argh(positional)]
+        /// speed of cmd
+        speed: u8,
+    }
+
+    let actual = Cmd::redact_arg_values(&["program-name"], &[]).unwrap_err();
+    assert_eq!(
+        actual,
+        argh::EarlyExit {
+            output: "Required positional arguments not provided:\n    speed\n".into(),
+            status: Err(()),
+        }
+    );
+}
+
+#[test]
+fn redact_arg_values_two_positional() {
+    #[derive(FromArgs, Debug)]
+    /// Short description
+    struct Cmd {
+        #[argh(positional)]
+        /// speed of cmd
+        speed: u8,
+
+        #[argh(positional)]
+        /// direction
+        direction: String,
+    }
+
+    let actual = Cmd::redact_arg_values(&["program-name"], &["5", "north"]).unwrap();
+    assert_eq!(actual, &["program-name", "speed", "direction"]);
+}
+
+#[test]
+fn redact_arg_values_positional_option() {
+    #[derive(FromArgs, Debug)]
+    /// Short description
+    struct Cmd {
+        #[argh(positional)]
+        /// speed of cmd
+        speed: u8,
+
+        #[argh(option)]
+        /// direction
+        direction: String,
+    }
+
+    let actual = Cmd::redact_arg_values(&["program-name"], &["5", "--direction", "north"]).unwrap();
+    assert_eq!(actual, &["program-name", "speed", "--direction"]);
+}
+
+#[test]
+fn redact_arg_values_positional_optional_option() {
+    #[derive(FromArgs, Debug)]
+    /// Short description
+    struct Cmd {
+        #[argh(positional)]
+        /// speed of cmd
+        speed: u8,
+
+        #[argh(option)]
+        /// direction
+        direction: Option<String>,
+    }
+
+    let actual = Cmd::redact_arg_values(&["program-name"], &["5"]).unwrap();
+    assert_eq!(actual, &["program-name", "speed"]);
+}
+
+#[test]
+fn redact_arg_values_subcommand() {
+    #[derive(FromArgs, Debug)]
+    /// Short description
+    struct Cmd {
+        #[argh(positional)]
+        /// speed of cmd
+        speed: u8,
+
+        #[argh(subcommand)]
+        /// means of transportation
+        means: MeansSubcommand,
+    }
+
+    #[derive(FromArgs, Debug)]
+    /// Short description
+    #[argh(subcommand)]
+    enum MeansSubcommand {
+        Walking(WalkingSubcommand),
+        Biking(BikingSubcommand),
+        Driving(DrivingSubcommand),
+    }
+
+    #[derive(FromArgs, Debug)]
+    #[argh(subcommand, name = "walking")]
+    /// Short description
+    struct WalkingSubcommand {
+        #[argh(option)]
+        /// a song to listen to
+        music: String,
+    }
+
+    #[derive(FromArgs, Debug)]
+    #[argh(subcommand, name = "biking")]
+    /// Short description
+    struct BikingSubcommand {}
+    #[derive(FromArgs, Debug)]
+    #[argh(subcommand, name = "driving")]
+    /// short description
+    struct DrivingSubcommand {}
+
+    let actual =
+        Cmd::redact_arg_values(&["program-name"], &["5", "walking", "--music", "Bach"]).unwrap();
+    assert_eq!(actual, &["program-name", "speed", "walking", "--music"]);
+}
+
+#[test]
+fn redact_arg_values_subcommand_with_space_in_name() {
+    #[derive(FromArgs, Debug)]
+    /// Short description
+    struct Cmd {
+        #[argh(positional)]
+        /// speed of cmd
+        speed: u8,
+
+        #[argh(subcommand)]
+        /// means of transportation
+        means: MeansSubcommand,
+    }
+
+    #[derive(FromArgs, Debug)]
+    /// Short description
+    #[argh(subcommand)]
+    enum MeansSubcommand {
+        Walking(WalkingSubcommand),
+        Biking(BikingSubcommand),
+    }
+
+    #[derive(FromArgs, Debug)]
+    #[argh(subcommand, name = "has space")]
+    /// Short description
+    struct WalkingSubcommand {
+        #[argh(option)]
+        /// a song to listen to
+        music: String,
+    }
+
+    #[derive(FromArgs, Debug)]
+    #[argh(subcommand, name = "biking")]
+    /// Short description
+    struct BikingSubcommand {}
+
+    let actual =
+        Cmd::redact_arg_values(&["program-name"], &["5", "has space", "--music", "Bach"]).unwrap();
+    assert_eq!(actual, &["program-name", "speed", "has space", "--music"]);
+}
+
+#[test]
+fn redact_arg_values_produces_help() {
+    #[derive(argh::FromArgs, Debug, PartialEq)]
+    /// Woot
+    struct Repeating {
+        #[argh(option, short = 'n')]
+        /// fooey
+        n: Vec<String>,
+    }
+
+    assert_eq!(
+        Repeating::redact_arg_values(&["program-name"], &["--help"]),
+        Err(argh::EarlyExit {
+            output: r###"Usage: program-name [-n <n...>]
+
+Woot
+
+Options:
+  -n, --n           fooey
+  --help            display usage information
+"###
+            .to_string(),
+            status: Ok(()),
+        }),
+    );
+}
+
+#[test]
+fn redact_arg_values_produces_errors_with_bad_arguments() {
+    #[derive(argh::FromArgs, Debug, PartialEq)]
+    /// Woot
+    struct Cmd {
+        #[argh(option, short = 'n')]
+        /// fooey
+        n: String,
+    }
+
+    assert_eq!(
+        Cmd::redact_arg_values(&["program-name"], &["--n"]),
+        Err(argh::EarlyExit {
+            output: "No value provided for option '--n'.\n".to_string(),
+            status: Err(()),
+        }),
+    );
 }
